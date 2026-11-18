@@ -111,18 +111,34 @@ can.
 
 ## What a caller pays for
 
-| Your server answers | The proxy returns | The developer |
+**A developer never pays for your tool's failure.** They pay when your tool
+did its work, or when their own input made it fail after it did.
+
+| What happens | The proxy returns | The developer |
 |---|---|---|
-| a result | `200`, the result exactly as written | pays |
-| a result with `isError: true` (your tool ran and failed) | `200`, the result | **pays**, as for every starter kit |
-| JSON-RPC error `-32602` / `-32600` / `-32700` (bad arguments or request) | `400` | is refunded |
-| a tool it does not list in `tools/list` | `404`, without calling your server | is refunded |
+| your server answers with a result | `200`, the result exactly as written | pays |
+| the arguments do not fit the tool's input schema | `400`, **without calling your server** | is refunded |
+| a tool your server does not list in `tools/list` | `404`, without calling your server | is refunded |
+| your server answers `isError: true` (your tool failed: an API down, a crash) | `502`, with your tool's message | is refunded; counts against your endpoint's health |
+| your server answers `isError: true` **and** `"_meta": {"nexus402/fault": "client"}` (the caller's input made it fail after your tool did work) | `200`, the result | pays |
+| JSON-RPC error `-32602` / `-32600` / `-32700` (bad request) | `400` | is refunded |
 | JSON-RPC error `-32601` (no such method) | `404` | is refunded |
 | any other JSON-RPC error | `502` | is refunded; counts against your endpoint's health |
 | nothing in 120 seconds, or it is down | `504` / `502` | is refunded; counts against your endpoint's health |
 
-If you would rather a failed run were free, return a JSON-RPC error instead
-of `isError: true`.
+The schema check uses the `inputSchema` your server lists. It checks types,
+required fields, allowed values, numeric, length and item limits, and fields
+a schema with `additionalProperties: false` does not name. A part of a schema
+it does not understand (`anyOf`, `$ref`, ...) is left for your server to
+judge, so the check never refuses a call your server would accept.
+
+To charge for a failure the caller caused after your tool did work, add the
+mark to that result:
+
+```json
+{"content":[{"type":"text","text":"No forecast for that date."}],
+ "isError":true, "_meta":{"nexus402/fault":"client"}}
+```
 
 ## What it does on every request
 
@@ -131,8 +147,9 @@ of `isError: true`.
    (`401`, and your server never sees it). The check is the same code as the
    Go starter kit's `verify.go`.
 2. Answers the publish-time hello and the host proof itself.
-3. Changes the tool name to your server's own, and nothing else: the
-   arguments reach your server byte for byte.
+3. Checks the arguments against the tool's input schema, then changes the
+   tool name to your server's own, and nothing else: the arguments reach
+   your server byte for byte.
 4. Speaks MCP to your server: initializes once, keeps the session (and
    starts a new one if your server forgets it), reads JSON or event-stream
    answers, answers your server's `ping`, and cancels a request upstream
@@ -152,7 +169,9 @@ front of four MCP servers that know nothing of Nexus402 (Streamable HTTP with
 JSON answers, Streamable HTTP with sessions and event streams, HTTP + SSE,
 and stdio). Each must pass the starter kits' contract, the gateway's real
 hello, a real signed call and seven forged requests, plus byte-exact
-arguments, error mapping, a forgotten session and concurrent calls. Only a
+arguments, the schema check, who pays for a failure, error mapping, a
+forgotten session and concurrent calls. Each release is also run against
+the official MCP reference server. Only a
 copy that passed is published here.
 
 Issues and pull requests are welcome; an accepted change arrives here with

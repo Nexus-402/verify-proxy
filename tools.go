@@ -63,7 +63,7 @@ const refreshGap = 30 * time.Second
 type toolNames struct {
 	up      upstream
 	mu      sync.Mutex
-	names   map[string]bool
+	names   map[string]json.RawMessage // each offered tool's input schema
 	fetched time.Time
 	stale   bool
 }
@@ -77,27 +77,31 @@ func (t *toolNames) notified(method string) {
 	}
 }
 
-// lookup reports whether the upstream offers name, and whether that answer
-// is known at all: when tools/list has never succeeded, the call goes ahead
-// and the upstream's own answer decides.
-func (t *toolNames) lookup(ctx context.Context, name string) (offered, known bool) {
+// lookup reports whether the upstream offers name and that tool's input
+// schema, and whether the answer is known at all: when tools/list has never
+// succeeded, the call goes ahead and the upstream's own answer decides.
+func (t *toolNames) lookup(ctx context.Context, name string) (offered, known bool, schema json.RawMessage) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	if t.names != nil && !t.stale && (t.names[name] || time.Since(t.fetched) < refreshGap) {
-		return t.names[name], true
+	if t.names != nil && !t.stale {
+		if schema, ok := t.names[name]; ok || time.Since(t.fetched) < refreshGap {
+			return ok, true, schema
+		}
 	}
 	listCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
 	tools, err := listTools(listCtx, t.up)
 	if err != nil {
-		return t.names[name], t.names != nil
+		schema, ok := t.names[name]
+		return ok, t.names != nil, schema
 	}
-	t.names = map[string]bool{}
+	t.names = map[string]json.RawMessage{}
 	for _, tl := range tools {
-		t.names[tl.Name] = true
+		t.names[tl.Name] = tl.InputSchema
 	}
 	t.fetched, t.stale = time.Now(), false
-	return t.names[name], true
+	schema, ok := t.names[name]
+	return ok, true, schema
 }
 
 // printTools is `verify-proxy tools`: each tool with the description and
@@ -122,6 +126,7 @@ func printTools(ctx context.Context, up upstream, out io.Writer) error {
 	}
 	encoder := json.NewEncoder(out)
 	encoder.SetIndent("", "  ")
+	encoder.SetEscapeHTML(false) // `<` stays `<`: this is pasted by a person, not served
 	if err := encoder.Encode(entries); err != nil {
 		return fmt.Errorf("print: %w", err)
 	}

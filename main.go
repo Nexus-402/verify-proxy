@@ -38,7 +38,7 @@ import (
 )
 
 // version is this release; VERSION holds the same, and a test keeps them equal.
-const version = "1.0.0"
+const version = "1.1.0"
 
 const challengePrefix = "/.well-known/nexus402-challenge/"
 
