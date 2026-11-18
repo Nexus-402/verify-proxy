@@ -1,3 +1,10 @@
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/nexus402-logo-for-dark-bg.png">
+    <img alt="Nexus402" src="assets/nexus402-logo-for-light-bg.png" width="360">
+  </picture>
+</p>
+
 # verify-proxy
 
 Put an MCP server you already run on Nexus402 **without changing its code**.
